@@ -1,36 +1,33 @@
 "use strict";
 
-var encoder;
-var mainReadyResolve;
-var mainReady = new Promise(function(resolve){ mainReadyResolve = resolve; });
+const FastSound = require('fast-sound');
+let encoder;
 
 global['onmessage'] = function( e ){
-  mainReady.then(function(){
-    switch( e['data']['command'] ){
-
-      case 'encode':
-        if (encoder){
-          encoder.encode( e['data']['buffers'] );
-        }
-        break;
-
-      case 'done':
-        if (encoder) {
-          encoder.encodeFinalFrame();
-        }
-        break;
-
-      case 'init':
-        encoder = new OggOpusEncoder( e['data'], Module );
-        global['postMessage']( {message: 'ready'} );
-        break;
-
-      default:
-        // Ignore any unknown commands and continue recieving commands
+  switch( e['data']['command'] ){
+  case 'encode':
+    if (encoder){
+      encoder.encode( e['data']['buffers'] );
     }
-  });
-};
+    break;
 
+  case 'done':
+    if (encoder) {
+      encoder.encodeFinalFrame();
+    }
+    break;
+
+  case 'init':
+    FastSound(e['data']['fastSound']).then(function(lib) {
+      encoder = new OggOpusEncoder( e['data'], lib );
+      global['postMessage']( {message: 'ready'} );
+    });
+    break;
+
+  default:
+    // Ignore any unknown commands and continue recieving commands
+  }
+};
 
 var OggOpusEncoder = function( config, Module ){
 
@@ -292,13 +289,7 @@ OggOpusEncoder.prototype.segmentPacket = function( packetLength ) {
   }
 };
 
-
-if (!Module) {
-  Module = {};
-}
-
-Module['mainReady'] = mainReady;
-Module['OggOpusEncoder'] = OggOpusEncoder;
-Module['onRuntimeInitialized'] = mainReadyResolve;
-
-module.exports = Module;
+module.exports = {
+  OggOpusEncoder: OggOpusEncoder,
+  FastSound: FastSound
+};

@@ -1,43 +1,11 @@
 "use strict";
 
-var decoder;
-var mainReadyResolve;
-var mainReady = new Promise(function(resolve){ mainReadyResolve = resolve; });
-
-global['onmessage'] = function( e ){
-  mainReady.then(function(){
-    switch( e['data']['command'] ){
-
-      case 'decode':
-        if (decoder){
-          decoder.decode( e['data']['pages'] );
-        }
-        break;
-
-      case 'done':
-        if (decoder) {
-          decoder.sendLastBuffer();
-          global['close']();
-        }
-        break;
-
-      case 'init':
-        decoder = new OggOpusDecoder( e['data'], Module );
-        break;
-
-      default:
-        // Ignore any unknown commands and continue recieving commands
-    }
-  });
-};
-
 var OggOpusDecoder = function( config, Module ){
 
   if ( !Module ) {
     throw new Error('Module with exports required to initialize a decoder instance');
   }
 
-  this.mainReady = mainReady; // Expose for unit testing
   this.config = Object.assign({ 
     bufferLength: 4096, // Define size of outgoing buffer
     decoderSampleRate: 48000, // Desired decoder sample rate.
@@ -206,13 +174,36 @@ OggOpusDecoder.prototype.sendToOutputBuffers = function( mergedBuffers ){
   }
 };
 
+const FastSound = require('fast-sound');
+let decoder;
 
-if (!Module) {
-  Module = {};
-}
+global['onmessage'] = function( e ){
+  switch( e['data']['command'] ){
+  case 'decode':
+    if (decoder){
+      decoder.decode( e['data']['pages'] );
+    }
+    break;
 
-Module['mainReady'] = mainReady;
-Module['OggOpusDecoder'] = OggOpusDecoder;
-Module['onRuntimeInitialized'] = mainReadyResolve;
+  case 'done':
+    if (decoder) {
+      decoder.sendLastBuffer();
+      global['close']();
+    }
+    break;
 
-module.exports = Module;
+  case 'init':
+    FastSound(e['data']['fast_sound'] || {}).then(function(lib) {
+      decoder = new OggOpusDecoder( e['data'], lib );
+    });
+    break;
+
+  default:
+    // Ignore any unknown commands and continue recieving commands
+  }
+};
+
+module.exports = {
+  OggOpusDecoder: OggOpusDecoder,
+  FastSound: FastSound
+};

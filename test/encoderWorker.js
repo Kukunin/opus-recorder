@@ -9,7 +9,7 @@ var expect = chai.expect;
 
 describe('encoderWorker', function() {
 
-  var Module = require('../dist/encoderWorker.min');
+  var worker = require('../dist/encoderWorker.min');
   var sandbox = sinon.sandbox.create();
   var _opus_encoder_create_spy;
   var _opus_encoder_ctl_spy;
@@ -17,14 +17,20 @@ describe('encoderWorker', function() {
   var _speex_resampler_init_spy;
   var _opus_encode_float_spy;
 
+  function locateFile(file) {
+    return file;
+  }
+
   function getEncoder(config){
-    return Module.mainReady.then(function(){
-      _opus_encoder_create_spy = sandbox.spy(Module, '_opus_encoder_create');
-      _opus_encoder_ctl_spy = sandbox.spy(Module, '_opus_encoder_ctl');
-      _speex_resampler_process_interleaved_float_spy = sandbox.spy(Module, '_speex_resampler_process_interleaved_float');
-      _speex_resampler_init_spy = sandbox.spy(Module, '_speex_resampler_init');
-      _opus_encode_float_spy = sandbox.spy(Module, '_opus_encode_float');
-      return new Module.OggOpusEncoder(config, Module);
+    return new Promise(function(resolve) {
+      return worker.FastSound({locateFile: locateFile}).then(function(lib){
+        _opus_encoder_create_spy = sandbox.spy(lib, '_opus_encoder_create');
+        _opus_encoder_ctl_spy = sandbox.spy(lib, '_opus_encoder_ctl');
+        _speex_resampler_process_interleaved_float_spy = sandbox.spy(lib, '_speex_resampler_process_interleaved_float');
+        _speex_resampler_init_spy = sandbox.spy(lib, '_speex_resampler_init');
+        _opus_encode_float_spy = sandbox.spy(lib, '_opus_encode_float');
+        resolve(new worker.OggOpusEncoder(config, lib));
+      });
     });
   };
 
