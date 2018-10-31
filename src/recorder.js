@@ -10,6 +10,8 @@ var Recorder = function( config ){
     throw new Error("Recording is not supported in this browser");
   }
 
+  if ( !config ) config = {};
+
   this.state = "inactive";
   this.config = Object.assign({
     bufferLength: 4096,
@@ -17,7 +19,7 @@ var Recorder = function( config ){
     encoderFrameSize: 20,
     encoderPath: 'encoderWorker.min.js',
     encoderSampleRate: 48000,
-    maxBuffersPerPage: 40,
+    maxFramesPerPage: 40,
     mediaTrackConstraints: true,
     monitorGain: 0,
     numberOfChannels: 1,
@@ -27,6 +29,11 @@ var Recorder = function( config ){
     wavBitDepth: 16,
     fastSound: {}
   }, config );
+
+  if('maxBuffersPerPage' in config && !('maxFramesPerPage' in config)) {
+    console.warn('maxBuffersPerPage option is DEPRECATED. Use maxFramesPerPage');
+    this.config.maxFramesPerPage = config.maxBuffersPerPage;
+  }
 };
 
 
@@ -88,7 +95,6 @@ Recorder.prototype.initAudioContext = function( sourceNode ){
 };
 
 Recorder.prototype.initAudioGraph = function(){
-  var self = this;
 
   // First buffer can contain old data. Don't encode it.
   this.encodeBuffers = function(){
@@ -97,8 +103,8 @@ Recorder.prototype.initAudioGraph = function(){
 
   this.scriptProcessorNode = this.audioContext.createScriptProcessor( this.config.bufferLength, this.config.numberOfChannels, this.config.numberOfChannels );
   this.scriptProcessorNode.connect( this.audioContext.destination );
-  this.scriptProcessorNode.onaudioprocess = function( e ) {
-    self.encodeBuffers( e.inputBuffer );
+  this.scriptProcessorNode.onaudioprocess = ( e ) => {
+    this.encodeBuffers( e.inputBuffer );
   };
 
   this.monitorGainNode = this.audioContext.createGain();
@@ -111,27 +117,25 @@ Recorder.prototype.initAudioGraph = function(){
 };
 
 Recorder.prototype.initSourceNode = function( sourceNode ){
-  var self = this;
-
   if ( sourceNode && sourceNode.context ) {
     return global.Promise.resolve( sourceNode );
   }
 
-  return global.navigator.mediaDevices.getUserMedia({ audio : this.config.mediaTrackConstraints }).then( function( stream ){
-    self.stream = stream;
-    return self.audioContext.createMediaStreamSource( stream );
+  return global.navigator.mediaDevices.getUserMedia({ audio : this.config.mediaTrackConstraints }).then( ( stream ) => {
+    this.stream = stream;
+    return this.audioContext.createMediaStreamSource( stream );
   });
 };
 
 Recorder.prototype.initWorker = function(){
-  var self = this;
   var onPage = (this.config.streamPages ? this.streamPage : this.storePage).bind(this);
 
   this.recordedPages = [];
   this.totalLength = 0;
-  this.encoder = new global.Worker( this.config.encoderPath );
+  this.encoder =  new global.Worker(this.config.encoderPath);
+
   return new Promise((resolve, reject) => {
-    this.encoder.addEventListener( "message", function(e) {
+    this.encoder.addEventListener( "message", (e) => {
       switch( e['data']['message'] ){
         case 'ready':
           resolve();
@@ -139,8 +143,12 @@ Recorder.prototype.initWorker = function(){
         case 'page':
           onPage(e['data']['page']);
           break;
+        case 'done':
+          this.finish();
+          break;
       }
     });
+
     this.encoder.postMessage( Object.assign({
       command: 'init',
       originalSampleRate: this.audioContext.sampleRate,
@@ -184,15 +192,12 @@ Recorder.prototype.start = function( sourceNode ){
     this.initAudioContext( sourceNode );
     this.initAudioGraph();
 
-    return this.initSourceNode( sourceNode ).then( ( sourceNode ) => {
-      this.sourceNode = sourceNode;
-
-      return this.initWorker().then(() => {
-        this.state = "recording";
-        this.sourceNode.connect( this.monitorGainNode );
-        this.sourceNode.connect( this.recordingGainNode );
-        this.onstart();
-      });
+    return Promise.all([this.initSourceNode(sourceNode), this.initWorker()]).then((results) => {
+      this.sourceNode = results[0];
+      this.state = "recording";
+      this.sourceNode.connect( this.monitorGainNode );
+      this.sourceNode.connect( this.recordingGainNode );
+      this.onstart();
     });
   }
 };
@@ -210,7 +215,16 @@ Recorder.prototype.stop = function(){
 };
 
 Recorder.prototype.storePage = function( page ) {
-  if ( page === null ) {
+  this.recordedPages.push( page );
+  this.totalLength += page.length;
+};
+
+Recorder.prototype.streamPage = function( page ) {
+  this.ondataavailable( page );
+};
+
+Recorder.prototype.finish = function() {
+  if( !this.config.streamPages ) {
     var outputData = new Uint8Array( this.totalLength );
     this.recordedPages.reduce( function( offset, page ){
       outputData.set( page, offset );
@@ -218,23 +232,8 @@ Recorder.prototype.storePage = function( page ) {
     }, 0);
 
     this.ondataavailable( outputData );
-    this.onstop();
   }
-
-  else {
-    this.recordedPages.push( page );
-    this.totalLength += page.length;
-  }
-};
-
-Recorder.prototype.streamPage = function( page ) {
-  if ( page === null ) {
-    this.onstop();
-  }
-
-  else {
-    this.ondataavailable( page );
-  }
+  this.onstop();
 };
 
 

@@ -42,7 +42,7 @@ var OggOpusEncoder = function( config, Module ){
                               // 2051 = Restricted Low Delay (Lowest latency)
     encoderFrameSize: 20, // Specified in ms.
     encoderSampleRate: 48000, // Desired encoding sample rate. Audio will be resampled
-    maxBuffersPerPage: 40, // Tradeoff latency with overhead
+    maxFramesPerPage: 40, // Tradeoff latency with overhead
     numberOfChannels: 1,
     originalSampleRate: 44100,
     resampleQuality: 3, // Value between 0 and 10 inclusive. 10 being highest quality.
@@ -66,7 +66,7 @@ var OggOpusEncoder = function( config, Module ){
   this.segmentDataIndex = 0;
   this.segmentTable = new Uint8Array( 255 ); // Maximum data segments
   this.segmentTableIndex = 0;
-  this.buffersInPage = 0;
+  this.framesInPage = 0;
 
   this.initChecksumTable();
   this.initCodec();
@@ -99,12 +99,12 @@ OggOpusEncoder.prototype.encode = function( buffers ) {
       var packetLength = this._opus_encode_float( this.encoder, this.encoderBufferPointer, this.encoderSamplesPerChannel, this.encoderOutputPointer, this.encoderOutputMaxLength );
       this.segmentPacket( packetLength );
       this.resampleBufferIndex = 0;
-    }
-  }
 
-  this.buffersInPage++;
-  if ( this.buffersInPage >= this.config.maxBuffersPerPage ) {
-    this.generatePage();
+      this.framesInPage++;
+      if ( this.framesInPage >= this.config.maxFramesPerPage ) {
+        this.generatePage();
+      }
+    }
   }
 };
 
@@ -116,7 +116,7 @@ OggOpusEncoder.prototype.encodeFinalFrame = function() {
   this.encode( finalFrameBuffers );
   this.headerType += 4;
   this.generatePage();
-  global['postMessage']( {message: 'page', page: null} );
+  global['postMessage']( {message: 'done'} );
   global['close']();
 };
 
@@ -189,7 +189,7 @@ OggOpusEncoder.prototype.generatePage = function(){
   global['postMessage']( {message: 'page', page: page}, [page.buffer] );
   this.segmentTableIndex = 0;
   this.segmentDataIndex = 0;
-  this.buffersInPage = 0;
+  this.framesInPage = 0;
   if ( granulePosition > 0 ) {
     this.lastPositiveGranulePosition = granulePosition;
   }
