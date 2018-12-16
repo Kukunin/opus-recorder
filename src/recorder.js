@@ -96,11 +96,6 @@ Recorder.prototype.initAudioGraph = function(){
     delete this.encodeBuffers;
   };
 
-  this.scriptProcessorNode = this.audioContext.createScriptProcessor( this.config.bufferLength, this.config.numberOfChannels, this.config.numberOfChannels );
-  this.scriptProcessorNode.connect( this.audioContext.destination );
-  this.scriptProcessorNode.onaudioprocess = ( e ) => {
-    this.encodeBuffers( e.inputBuffer );
-  };
 
   this.monitorGainNode = this.audioContext.createGain();
   this.setMonitorGain( this.config.monitorGain );
@@ -108,8 +103,28 @@ Recorder.prototype.initAudioGraph = function(){
 
   this.recordingGainNode = this.audioContext.createGain();
   this.setRecordingGain( this.config.recordingGain );
-  this.recordingGainNode.connect( this.scriptProcessorNode );
+  this.createScriptProcessor();
 };
+
+Recorder.prototype.createScriptProcessor = function(){
+  this.scriptProcessorNode = this.audioContext.createScriptProcessor(
+    this.config.bufferLength,
+    this.config.numberOfChannels,
+    this.config.numberOfChannels
+  );
+  this.scriptProcessorNode.connect( this.audioContext.destination );
+  this.scriptProcessorNode.onaudioprocess = ( e ) => {
+    this.encodeBuffers( e.inputBuffer );
+  };
+  this.recordingGainNode.connect( this.scriptProcessorNode );
+}
+
+Recorder.prototype.changeBufferLength = function(bufferLength){
+  this.recordingGainNode.disconnect( this.scriptProcessorNode );
+  this.scriptProcessorNode.onaudioprocess = null;
+  this.config.bufferLength = bufferLength;
+  this.createScriptProcessor();
+}
 
 Recorder.prototype.initSourceNode = function( sourceNode ){
   if ( sourceNode && sourceNode.context ) {
